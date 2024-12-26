@@ -34,6 +34,9 @@ jobs:
             const fileList = files.data.map(file => file.filename);
             core.setOutput('files', JSON.stringify(fileList));
 
+      - name: Install node-fetch
+        run: npm install node-fetch
+
       - name: Create Devin Review Session
         id: devin-review
         uses: actions/github-script@v7
@@ -108,5 +111,3 @@ jobs:
               core.setFailed(`Failed to create Devin session: ${error.message}`);
             }
 
-      - name: Install node-fetch
-        run: npm install node-fetch
