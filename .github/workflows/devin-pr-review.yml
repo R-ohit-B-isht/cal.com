@@ -35,7 +35,7 @@ jobs:
             core.setOutput('files', JSON.stringify(fileList));
 
       - name: Install node-fetch
-        run: npm install node-fetch
+        run: npm install node-fetch --legacy-peer-deps
 
       - name: Create Devin Review Session
         id: devin-review
