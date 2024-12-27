@@ -37,7 +37,7 @@ jobs:
             --user-afk
 
             Repository: ${{ github.repository }}
-            
+
             PR Number: ${{ github.event.pull_request.number }}
 
             Code Conformance Rules File Path:
@@ -51,7 +51,7 @@ jobs:
             2. Analyze each changed file for conformance violations
             3. Provide specific, actionable feedback for any violations
             4. If no violations are found, confirm compliance
-            5. Return feedback as a JSON array of comments
+            5. Push feedback as comments on the PR
 
             Guidelines:
             - Be specific about which rules are violated
