@@ -56,9 +56,8 @@ jobs:
             Guidelines:
             - Be specific about which rules are violated
             - Provide clear suggestions for fixing violations
-            - Use a professional and constructive tone
             - Reference specific lines of code in your comments
-            - Only comment on actual violations, not style preferences'
+            - Comment on actual violations and coding conventions
         run: |
           
           # Convert multiline string to JSON-safe format
