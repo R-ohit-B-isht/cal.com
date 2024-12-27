@@ -32,39 +32,41 @@ jobs:
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
           FILES_TO_REVIEW: ${{ steps.pr-files.outputs.files }}
+          REVIEW_PROMPT: |
+            You are PR Reviewer Devin. Your task is to review the following pull request based on our code conformance rules and leave feedback as comments.
+            --user-afk
+
+            Code Conformance Rules File Path:
+            ./CONTRIBUTING.md
+
+            Files to review:
+            '"$FILES_TO_REVIEW"'
+
+            Your tasks:
+            1. Review the changes in the PR files
+            2. Analyze each changed file for conformance violations
+            3. Provide specific, actionable feedback for any violations
+            4. If no violations are found, confirm compliance
+            5. Return feedback as a JSON array of comments
+
+            Guidelines:
+            - Be specific about which rules are violated
+            - Provide clear suggestions for fixing violations
+            - Use a professional and constructive tone
+            - Reference specific lines of code in your comments
+            - Only comment on actual violations, not style preferences'
         run: |
-          # Create review prompt
-          REVIEW_PROMPT=$(cat << 'EOF'
-          You are PR Reviewer Devin. Your task is to review the following pull request based on our code conformance rules and leave feedback as comments.
-          --user-afk
           
-          Code Conformance Rules File Path:
-          ./CONTRIBUTING.md
-          
-          Files to review:
-          $FILES_TO_REVIEW
-          
-          Your tasks:
-          1. Review the changes in the PR files
-          2. Analyze each changed file for conformance violations
-          3. Provide specific, actionable feedback for any violations
-          4. If no violations are found, confirm compliance
-          5. Push feedback as list of comments on the PR
-          
-          Guidelines:
-          - Be specific about which rules are violated
-          - Provide clear suggestions for fixing violations
-          - Use a professional and constructive tone
-          - Reference specific lines of code in your comments
-          - Only comment on actual violations, not style preferences
-          EOF
-          )
+          # Create JSON payload using jq
+          JSON_PAYLOAD=$(jq -n \
+            --arg prompt "$REVIEW_PROMPT" \
+            '{"prompt": $arg, "unlisted": true}')
           
           # Create Devin review session
           RESPONSE=$(curl -s -X POST \
             -H "Authorization: Bearer $DEVIN_API_KEY" \
             -H "Content-Type: application/json" \
-            -d "{\"prompt\": \"$REVIEW_PROMPT\", \"unlisted\": true}" \
+            -d "$JSON_PAYLOAD" \
             "https://api.devin.ai/v1/sessions")
           
           # Check for errors and set outputs
@@ -75,4 +77,4 @@ jobs:
           
           echo "session-id=$(echo "$RESPONSE" | jq -r '.session_id')" >> $GITHUB_OUTPUT
           echo "session-url=$(echo "$RESPONSE" | jq -r '.url')" >> $GITHUB_OUTPUT
-          echo "Devin session created successfully: $(echo "$RESPONSE" )"
+          echo "Devin session created successfully: $(echo "$RESPONSE" | jq -r '.session_id')"
