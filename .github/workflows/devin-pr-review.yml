@@ -75,4 +75,4 @@ jobs:
           
           echo "session-id=$(echo "$RESPONSE" | jq -r '.session_id')" >> $GITHUB_OUTPUT
           echo "session-url=$(echo "$RESPONSE" | jq -r '.url')" >> $GITHUB_OUTPUT
-          echo "Devin session created successfully: $(echo "$RESPONSE" | jq -r '.session_id')"
+          echo "Devin session created successfully: $(echo "$RESPONSE" )"
