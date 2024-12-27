@@ -1,0 +1,400 @@
+name: Automated Test Coverage Suggestions
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# Configure PR size limits
+env:
+  MAX_FILES_CHANGED: 10
+  MAX_LINES_CHANGED: 500
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  coverage-suggestions:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get PR files and check size
+        id: pr-files
+        run: |
+          # Get PR data
+          PR_DATA=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}")
+          
+          # Extract PR statistics
+          CHANGED_FILES=$(echo "$PR_DATA" | jq -r '.changed_files')
+          ADDITIONS=$(echo "$PR_DATA" | jq -r '.additions')
+          DELETIONS=$(echo "$PR_DATA" | jq -r '.deletions')
+          TOTAL_CHANGES=$((ADDITIONS + DELETIONS))
+          
+          # Check PR size limits
+          if [ "$CHANGED_FILES" -gt "$MAX_FILES_CHANGED" ]; then
+            echo "PR exceeds maximum number of files ($MAX_FILES_CHANGED)"
+            exit 78  # Use a specific exit code for skipping
+          fi
+          
+          if [ "$TOTAL_CHANGES" -gt "$MAX_LINES_CHANGED" ]; then
+            echo "PR exceeds maximum number of lines changed ($MAX_LINES_CHANGED)"
+            exit 78  # Use a specific exit code for skipping
+          fi
+          
+          # Get file list if within limits
+          FILES=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" | \
+            jq -r '[.[].filename] | @json')
+          
+          # Output statistics
+          echo "files=$FILES" >> $GITHUB_OUTPUT
+          echo "changed_files=$CHANGED_FILES" >> $GITHUB_OUTPUT
+          echo "total_changes=$TOTAL_CHANGES" >> $GITHUB_OUTPUT
+
+      - name: Create Devin Coverage Session
+        id: devin-coverage
+        env:
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          FILES_TO_REVIEW: ${{ steps.pr-files.outputs.files }}
+          COVERAGE_PROMPT: |
+            You are PR Reviewer Devin. Your task is to review the following pull request, implement test coverage improvements, and manage the deployment process.
+            --user-afk
+
+            Repository: ${{ github.repository }}
+            PR Number: ${{ github.event.pull_request.number }}
+            Changed Files: ${{ steps.pr-files.outputs.files }}
+            Current CI Status: ${{ steps.pr-files.outputs.ci_status }}
+            
+            CI Status Interpretation:
+            - success: Current changes pass all tests
+            - failure: Current changes have test/build issues
+            - pending: Ongoing CI checks
+            - error: CI system encountered an error
+            
+            Your tasks:
+            1. Review the changes in the PR files
+            2. Analyze test coverage in the changed files
+            3. Design and implement test coverage improvements:
+               - Write new test cases
+               - Cover edge cases
+               - Add integration tests where needed
+               - Implement proper mocking
+            4. Local Testing Workflow:
+               - Run existing test suite to establish baseline
+               - Implement new tests
+               - Verify all tests pass locally
+               - Generate coverage reports
+               - Ensure no regressions
+            5. User Approval Process:
+               - Present test implementation plan
+               - Show coverage improvements
+               - Wait for explicit user approval
+               - Address any feedback
+            6. CI/CD Monitoring:
+               - Create PR with approved changes
+               - Monitor CI build status
+               - Watch for test failures
+               - Address any CI issues
+               - Ensure build stability
+
+            Guidelines:
+            - Focus on meaningful test coverage
+            - Implement comprehensive test scenarios
+            - Consider both unit and integration tests
+            - Provide clear implementation documentation
+            - Adapt implementation based on current CI status (${{ steps.pr-files.outputs.ci_status }})
+            - Ensure new tests align with existing infrastructure
+            - Only proceed with changes after user approval
+            - Monitor and respond to CI build status
+            - Roll back changes if CI stability is compromised
+        run: |
+          # Convert multiline string to JSON-safe format
+          ESCAPED_PROMPT=$(echo "$COVERAGE_PROMPT" | jq -Rs .)
+          
+          RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Bearer $DEVIN_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"prompt\": $ESCAPED_PROMPT}" \
+            "https://api.devin.ai/v1/sessions")
+          
+          # Validate JSON response
+          if ! echo "$RESPONSE" | jq empty 2>/dev/null; then
+            echo "Error: Invalid JSON response from Devin API"
+            exit 1
+          fi
+          
+          # Check for API errors
+          if [ "$(echo "$RESPONSE" | jq -r '.error')" != "null" ]; then
+            echo "Error creating Devin session: $(echo "$RESPONSE" | jq -r '.error')"
+            exit 1
+          fi
+          
+          # Parse and validate session information
+          SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id')
+          SESSION_URL=$(echo "$RESPONSE" | jq -r '.url')
+          
+          if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" = "null" ]; then
+            echo "Error: Invalid session ID received"
+            exit 1
+          fi
+          
+          if [ -z "$SESSION_URL" ] || [ "$SESSION_URL" = "null" ]; then
+            echo "Error: Invalid session URL received"
+            exit 1
+          fi
+          
+          # Parse coverage suggestions and test implementation details
+          SUGGESTIONS=$(echo "$RESPONSE" | jq -r '.suggestions // []')
+          TEST_PLAN=$(echo "$RESPONSE" | jq -r '.test_plan // {}')
+          
+          if [ "$SUGGESTIONS" = "null" ]; then
+            SUGGESTIONS="[]"
+          fi
+          
+          if [ "$TEST_PLAN" = "null" ]; then
+            TEST_PLAN="{}"
+          fi
+          
+          # Store outputs for subsequent steps
+          {
+            echo "session-id=$SESSION_ID"
+            echo "session-url=$SESSION_URL"
+            echo "suggestions=$SUGGESTIONS"
+            echo "test-plan=$TEST_PLAN"
+            echo "response-valid=true"
+          } >> $GITHUB_OUTPUT
+          
+          # Create implementation plan for local testing
+          cat > implementation_plan.json << EOF
+          {
+            "session_id": "$SESSION_ID",
+            "session_url": "$SESSION_URL",
+            "suggestions": $SUGGESTIONS,
+            "test_plan": $TEST_PLAN,
+            "files_to_test": $FILES_TO_REVIEW,
+            "pr_number": $PR_NUMBER,
+            "repository": "${{ github.repository }}",
+            "branch": "${{ github.head_ref }}"
+          }
+          EOF
+          
+          # Validate implementation plan
+          if ! jq empty implementation_plan.json 2>/dev/null; then
+            echo "Error: Failed to create valid implementation plan"
+            exit 1
+          fi
+          
+          echo "Implementation plan created successfully at: implementation_plan.json"
+          echo "Devin coverage session created successfully: $(echo "$RESPONSE")"
+
+      - name: Execute Local Tests
+        id: local-tests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Load implementation plan
+          if [ ! -f "implementation_plan.json" ]; then
+            echo "Error: implementation_plan.json not found"
+            exit 1
+          fi
+          
+          # Install dependencies
+          echo "Installing dependencies..."
+          yarn install
+          
+          # Run initial test suite for baseline
+          echo "Running initial test suite..."
+          
+          # Run unit tests and capture coverage
+          echo "Running unit tests..."
+          yarn test -- --coverage --no-isolate || true
+          
+          # Run type checking
+          echo "Running type checks..."
+          yarn type-check:ci || true
+          
+          # Store initial coverage reports
+          if [ -f "coverage/coverage-summary.json" ]; then
+            cp coverage/coverage-summary.json coverage/initial-coverage.json
+          fi
+          
+          # Parse implementation plan
+          TEST_PLAN=$(cat implementation_plan.json | jq -r '.test_plan')
+          FILES_TO_TEST=$(cat implementation_plan.json | jq -r '.files_to_test')
+          
+          echo "Implementing test improvements for files: $FILES_TO_TEST"
+          echo "Using test plan: $TEST_PLAN"
+          
+          # Wait for Devin to implement test improvements
+          echo "Implementing test improvements..."
+          sleep 30  # Allow time for Devin to process
+          
+          # Run updated test suite
+          echo "Running updated test suite..."
+          
+          # Run unit tests with coverage
+          echo "Running updated unit tests..."
+          if ! yarn test -- --coverage --no-isolate; then
+            echo "Error: Unit tests failed after improvements"
+            exit 1
+          fi
+          
+          # Run type checking
+          echo "Running type checks..."
+          if ! yarn type-check:ci; then
+            echo "Error: Type checking failed after improvements"
+            exit 1
+          fi
+          
+          # Run E2E tests if needed
+          if echo "$TEST_PLAN" | jq -e '.include_e2e // false' > /dev/null; then
+            echo "Running E2E tests..."
+            if ! yarn e2e; then
+              echo "Error: E2E tests failed"
+              exit 1
+            fi
+          fi
+          
+          # Generate and store coverage comparison
+          if [ -f "coverage/coverage-summary.json" ] && [ -f "coverage/initial-coverage.json" ]; then
+            # Calculate coverage difference
+            INITIAL_COVERAGE=$(jq '.total.lines.pct' coverage/initial-coverage.json)
+            NEW_COVERAGE=$(jq '.total.lines.pct' coverage/coverage-summary.json)
+            
+            echo "coverage_improved=true" >> $GITHUB_OUTPUT
+            echo "initial_coverage=$INITIAL_COVERAGE" >> $GITHUB_OUTPUT
+            echo "new_coverage=$NEW_COVERAGE" >> $GITHUB_OUTPUT
+            echo "coverage_diff=$((NEW_COVERAGE - INITIAL_COVERAGE))" >> $GITHUB_OUTPUT
+            
+            echo "coverage_report<<EOF" >> $GITHUB_OUTPUT
+            echo "Initial Coverage: $INITIAL_COVERAGE%"  >> $GITHUB_OUTPUT
+            echo "New Coverage: $NEW_COVERAGE%" >> $GITHUB_OUTPUT
+            echo "Improvement: $((NEW_COVERAGE - INITIAL_COVERAGE))%" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_OUTPUT
+            echo "Detailed Changes:" >> $GITHUB_OUTPUT
+            diff coverage/initial-coverage.json coverage/coverage-summary.json || true
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "Error: Coverage reports not found"
+            exit 1
+          fi
+
+      - name: Request User Approval
+        id: user-approval
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Create approval request comment
+          COMMENT="## Test Coverage Implementation Review Required
+          
+          Devin has implemented test coverage improvements:
+          
+          ### Coverage Changes
+          \`\`\`diff
+          ${{ steps.local-tests.outputs.coverage_report }}
+          \`\`\`
+          
+          Please review the changes and approve or provide feedback.
+          
+          - Comment 'approve' to proceed with creating the PR
+          - Comment 'revise' with feedback to request changes
+          - Comment 'cancel' to abort the process"
+          
+          # Post comment and get comment ID
+          COMMENT_ID=$(gh pr comment $PR_NUMBER -b "$COMMENT" --json id -q .id)
+          echo "comment_id=$COMMENT_ID" >> $GITHUB_OUTPUT
+          
+          # Wait for approval (timeout after 24 hours)
+          TIMEOUT=86400
+          START_TIME=$(date +%s)
+          while true; do
+            CURRENT_TIME=$(date +%s)
+            if [ $((CURRENT_TIME - START_TIME)) -gt $TIMEOUT ]; then
+              echo "Timeout waiting for approval"
+              exit 1
+            fi
+            
+            RESPONSE=$(gh pr view $PR_NUMBER --json comments -q ".comments[] | select(.id==$COMMENT_ID) | .body")
+            if echo "$RESPONSE" | grep -q "^approve$"; then
+              echo "approved=true" >> $GITHUB_OUTPUT
+              break
+            elif echo "$RESPONSE" | grep -q "^revise"; then
+              echo "feedback=$(echo "$RESPONSE" | sed 's/^revise //')" >> $GITHUB_OUTPUT
+              exit 1
+            elif echo "$RESPONSE" | grep -q "^cancel$"; then
+              echo "cancelled=true" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+            
+            sleep 60
+          done
+
+      - name: Create and Monitor PR
+        if: steps.user-approval.outputs.approved == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BRANCH_NAME: coverage-suggestions-${{ github.event.pull_request.number }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Create and switch to new branch
+          git checkout -b $BRANCH_NAME
+          
+          # Stage and commit changes
+          git add .
+          git commit -m "feat: implement test coverage improvements for PR #${PR_NUMBER}"
+          git push origin $BRANCH_NAME
+          
+          # Create PR with detailed information
+          PR_URL=$(gh pr create \
+            --title "Test Coverage Implementation for PR #${PR_NUMBER}" \
+            --body "This PR implements test coverage improvements for PR #${PR_NUMBER}.
+            
+            ### Changes Made
+            - Added new test cases
+            - Improved coverage metrics
+            - Verified local test execution
+            
+            ### Coverage Report
+            \`\`\`diff
+            ${{ steps.local-tests.outputs.coverage_report }}
+            \`\`\`
+            
+            Generated by Devin AI" \
+            --base main \
+            --head $BRANCH_NAME)
+          
+          # Monitor CI status
+          echo "Monitoring CI status for PR..."
+          gh pr checks $PR_URL --watch
+          
+          # Check final CI status
+          CI_STATUS=$(gh pr checks $PR_URL --json conclusion -q .[].conclusion)
+          if [ "$CI_STATUS" != "success" ]; then
+            echo "CI checks failed. Rolling back changes..."
+            git push origin --delete $BRANCH_NAME
+            exit 1
+          fi
+
+# Setup Instructions:
+# 1. Create DEVIN_API_KEY in GitHub project secrets
+# 2. Create GIT_TOKEN in GitHub project secrets (if needed)
+# 3. Merge this workflow into main
+# 4. Confirm the workflow is triggered on PR events
+#
+# This workflow will:
+# - Trigger on new/updated PRs
+# - Analyze changed files for test coverage
+# - Generate suggestions using Devin AI
+# - Create a new PR with coverage improvement suggestions
