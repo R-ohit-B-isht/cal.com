@@ -57,11 +57,13 @@ jobs:
             - Only comment on actual violations, not style preferences'
         run: |
           
-          # Create Devin review session
+          # Convert multiline string to JSON-safe format
+          ESCAPED_PROMPT=$(echo "$REVIEW_PROMPT" | jq -Rs .)
+          
           RESPONSE=$(curl -s -X POST \
             -H "Authorization: Bearer $DEVIN_API_KEY" \
             -H "Content-Type: application/json" \
-            -d '{"prompt": "$REVIEW_PROMPT"}' \
+            -d "{\"prompt\": $ESCAPED_PROMPT}" \
             "https://api.devin.ai/v1/sessions")
           
           # Check for errors and set outputs
