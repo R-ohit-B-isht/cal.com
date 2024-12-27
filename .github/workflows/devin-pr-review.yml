@@ -33,34 +33,13 @@ jobs:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
           FILES_TO_REVIEW: ${{ steps.pr-files.outputs.files }}
         run: |
-          # Create review prompt
-          REVIEW_PROMPT='You are PR Reviewer Devin. Your task is to review the following pull request based on our code conformance rules and leave feedback as comments.
---user-afk
-
-Code Conformance Rules File Path:
-./CONTRIBUTING.md
-
-Files to review:
-'"$FILES_TO_REVIEW"'
-
-Your tasks:
-1. Review the changes in the PR files
-2. Analyze each changed file for conformance violations
-3. Provide specific, actionable feedback for any violations
-4. If no violations are found, confirm compliance
-5. Return feedback as a JSON array of comments
-
-Guidelines:
-- Be specific about which rules are violated
-- Provide clear suggestions for fixing violations
-- Use a professional and constructive tone
-- Reference specific lines of code in your comments
-- Only comment on actual violations, not style preferences'
-          
-          # Create JSON payload using jq
+          # Create JSON payload directly with jq
           JSON_PAYLOAD=$(jq -n \
-            --arg prompt "$REVIEW_PROMPT" \
-            '{"prompt": $arg, "unlisted": true}')
+            --arg files "$FILES_TO_REVIEW" \
+            '{
+              "prompt": "You are PR Reviewer Devin. Your task is to review the following pull request based on our code conformance rules and leave feedback as comments.\n--user-afk\n\nCode Conformance Rules File Path:\n./CONTRIBUTING.md\n\nFiles to review:\n" + $files + "\n\nYour tasks:\n1. Review the changes in the PR files\n2. Analyze each changed file for conformance violations\n3. Provide specific, actionable feedback for any violations\n4. If no violations are found, confirm compliance\n5. Return feedback as a JSON array of comments\n\nGuidelines:\n- Be specific about which rules are violated\n- Provide clear suggestions for fixing violations\n- Use a professional and constructive tone\n- Reference specific lines of code in your comments\n- Only comment on actual violations, not style preferences",
+              "unlisted": true
+            }')
           
           # Create Devin review session
           RESPONSE=$(curl -s -X POST \
