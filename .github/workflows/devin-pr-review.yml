@@ -40,7 +40,7 @@ jobs:
             ./CONTRIBUTING.md
 
             Files to review:
-            '"$FILES_TO_REVIEW"'
+            ${{ steps.pr-files.outputs.files }}
 
             Your tasks:
             1. Review the changes in the PR files
