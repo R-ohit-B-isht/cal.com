@@ -19,94 +19,60 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install node-fetch
-        run: npm install node-fetch
-
       - name: Get PR files
         id: pr-files
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GIT_TOKEN }}
-          script: |
-            const files = await github.rest.pulls.listFiles({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number
-            });
-            
-            const fileList = files.data.map(file => file.filename);
-            core.setOutput('files', JSON.stringify(fileList));
+        run: |
+          FILES=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" | \
+            jq -r '[.[].filename] | @json')
+          echo "files=$FILES" >> $GITHUB_OUTPUT
 
       - name: Create Devin Review Session
         id: devin-review
-        uses: actions/github-script@v7
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
           FILES_TO_REVIEW: ${{ steps.pr-files.outputs.files }}
-          GH_TOKEN: ${{ secrets.GIT_TOKEN }}
-        with:
-          github-token: ${{ secrets.GIT_TOKEN }}
-          script: |
-            const fetch = require('node-fetch');
-            
-            // Read PR data
-            const prData = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number
-            });
-            
-            // Look for conformance rules in PR description or use default
-            let conformanceRules = './CONTRIBUTING.md';
-
-            // Create Devin review session
-            const reviewPrompt = `You are PR Reviewer Devin. Your task is to review the following pull request based on our code conformance rules and leave feedback as comments.
-            --user-afk
-            
-            Code Conformance Rules File Path:
-            ${conformanceRules}
-            
-            Files to review:
-            ${process.env.FILES_TO_REVIEW}
-            
-            Your tasks:
-            1. Review the changes in the PR files
-            2. Analyze each changed file for conformance violations
-            3. Provide specific, actionable feedback for any violations
-            4. If no violations are found, confirm compliance
-            5. Return feedback as a JSON array of comments
-            
-            Guidelines:
-            - Be specific about which rules are violated
-            - Provide clear suggestions for fixing violations
-            - Use a professional and constructive tone
-            - Reference specific lines of code in your comments
-            - Only comment on actual violations, not style preferences
-            `;
-            
-            try {
-              const response = await fetch('https://api.devin.ai/v1/sessions', {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${process.env.DEVIN_API_KEY}`,
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                  prompt: reviewPrompt,
-                  unlisted: true
-                })
-              });
-              
-              if (!response.ok) {
-                throw new Error(`Devin API error: ${response.status} ${response.statusText}`);
-              }
-              
-              const session = await response.json();
-              core.setOutput('session-id', session.session_id);
-              core.setOutput('session-url', session.url);
-              
-              // Log success
-              console.log('Devin session created successfully:', session.session_id);
-            } catch (error) {
-              core.setFailed(`Failed to create Devin session: ${error.message}`);
-            }
+        run: |
+          # Create review prompt
+          REVIEW_PROMPT=$(cat << 'EOF'
+          You are PR Reviewer Devin. Your task is to review the following pull request based on our code conformance rules and leave feedback as comments.
+          --user-afk
+          
+          Code Conformance Rules File Path:
+          ./CONTRIBUTING.md
+          
+          Files to review:
+          $FILES_TO_REVIEW
+          
+          Your tasks:
+          1. Review the changes in the PR files
+          2. Analyze each changed file for conformance violations
+          3. Provide specific, actionable feedback for any violations
+          4. If no violations are found, confirm compliance
+          5. Return feedback as a JSON array of comments
+          
+          Guidelines:
+          - Be specific about which rules are violated
+          - Provide clear suggestions for fixing violations
+          - Use a professional and constructive tone
+          - Reference specific lines of code in your comments
+          - Only comment on actual violations, not style preferences
+          EOF
+          )
+          
+          # Create Devin review session
+          RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Bearer $DEVIN_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"prompt\": \"$REVIEW_PROMPT\", \"unlisted\": true}" \
+            "https://api.devin.ai/v1/sessions")
+          
+          # Check for errors and set outputs
+          if [ "$(echo "$RESPONSE" | jq -r '.error')" != "null" ]; then
+            echo "Error creating Devin session: $(echo "$RESPONSE" | jq -r '.error')"
+            exit 1
+          fi
+          
+          echo "session-id=$(echo "$RESPONSE" | jq -r '.session_id')" >> $GITHUB_OUTPUT
+          echo "session-url=$(echo "$RESPONSE" | jq -r '.url')" >> $GITHUB_OUTPUT
+          echo "Devin session created successfully: $(echo "$RESPONSE" | jq -r '.session_id')"
