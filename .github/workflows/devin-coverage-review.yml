@@ -1,0 +1,79 @@
+name: Automated Test Coverage Suggestions
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  coverage-suggestions:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get PR files
+        id: pr-files
+        run: |
+          FILES=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" | \
+            jq -r '[.[].filename] | @json')
+          echo "files=$FILES" >> $GITHUB_OUTPUT
+
+      - name: Create Devin Coverage Session
+        id: devin-coverage
+        env:
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          FILES_TO_REVIEW: ${{ steps.pr-files.outputs.files }}
+          COVERAGE_PROMPT: |
+            You are PR Coverage Reviewer Devin. Your task is to review the following pull request and suggest improvements to test coverage.
+            --user-afk
+
+            Repository: ${{ github.repository }}
+            Initial PR Number: ${{ github.event.pull_request.number }}
+
+            Files to review:
+            ${{ steps.pr-files.outputs.files }}
+
+            Your tasks:
+            1. Review the changes in the PR files
+            2. Analyze test coverage in the changed files
+            3. Suggest improvements to increase test coverage by increasing coverage in the current session and reporting back the new successful coverage for the introduced changes in the comments of ${{ github.event.pull_request.number }} pr along with the current session link/url.
+               Consider Adding:
+                - Missing test cases
+                - Edge cases not covered
+                - Integration test opportunities
+                - Mocking strategies
+            4. Wait for the user to verify the changes in the session and only create a new PR for the new increased coverage in session when prompted or commented by the user to do so.
+
+            Guidelines:
+            - Focus on meaningful test coverage
+            - Suggest specific test scenarios
+            - Consider both unit and integration tests
+
+        run: |
+          # Convert multiline string to JSON-safe format
+          ESCAPED_PROMPT=$(echo "$COVERAGE_PROMPT" | jq -Rs .)
+          
+          RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Bearer $DEVIN_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"prompt\": $ESCAPED_PROMPT}" \
+            "https://api.devin.ai/v1/sessions")
+          
+          # Check for errors and set outputs
+          if [ "$(echo "$RESPONSE" | jq -r '.error')" != "null" ]; then
+            echo "Error creating Devin session: $(echo "$RESPONSE" | jq -r '.error')"
+            exit 1
+          fi
+          
+          echo "session-id=$(echo "$RESPONSE" | jq -r '.session_id')" >> $GITHUB_OUTPUT
+          echo "session-url=$(echo "$RESPONSE" | jq -r '.url')" >> $GITHUB_OUTPUT
+          echo "Devin coverage session created successfully: $(echo "$RESPONSE")"
