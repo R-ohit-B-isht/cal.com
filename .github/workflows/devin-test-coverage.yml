@@ -37,18 +37,17 @@ jobs:
           DELETIONS=$(echo "$PR_DATA" | jq -r '.deletions')
           TOTAL_CHANGES=$((ADDITIONS + DELETIONS))
           
-          # Check PR size limits
-          if [ "$CHANGED_FILES" -gt "$MAX_FILES_CHANGED" ]; then
-            echo "PR exceeds maximum number of files ($MAX_FILES_CHANGED)"
-            exit 78  # Use a specific exit code for skipping
+          # Check PR size limits and set warning flags
+          IS_LARGE_PR="false"
+          if [ "$CHANGED_FILES" -gt "$MAX_FILES_CHANGED" ] || [ "$TOTAL_CHANGES" -gt "$MAX_LINES_CHANGED" ]; then
+            echo "::warning::PR size exceeds recommended limits (Files: $CHANGED_FILES/$MAX_FILES_CHANGED, Changes: $TOTAL_CHANGES/$MAX_LINES_CHANGED)"
+            IS_LARGE_PR="true"
           fi
           
-          if [ "$TOTAL_CHANGES" -gt "$MAX_LINES_CHANGED" ]; then
-            echo "PR exceeds maximum number of lines changed ($MAX_LINES_CHANGED)"
-            exit 78  # Use a specific exit code for skipping
-          fi
+          # Output size status for later steps
+          echo "is_large_pr=$IS_LARGE_PR" >> $GITHUB_OUTPUT
           
-          # Get file list if within limits
+          # Get file list
           FILES=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" | \
             jq -r '[.[].filename] | @json')
@@ -63,6 +62,7 @@ jobs:
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
           FILES_TO_REVIEW: ${{ steps.pr-files.outputs.files }}
+          IS_LARGE_PR: ${{ steps.pr-files.outputs.is_large_pr }}
           COVERAGE_PROMPT: |
             You are PR Reviewer Devin. Your task is to review the following pull request, implement test coverage improvements, and manage the deployment process.
             --user-afk
@@ -115,6 +115,13 @@ jobs:
             - Monitor and respond to CI build status
             - Roll back changes if CI stability is compromised
         run: |
+          # Add PR size context to prompt if needed
+          if [ "$IS_LARGE_PR" = "true" ]; then
+            COVERAGE_PROMPT="$COVERAGE_PROMPT
+
+Note: This is a large PR that exceeds size recommendations. Please focus on critical test coverage improvements and consider suggesting PR size optimizations."
+          fi
+          
           # Convert multiline string to JSON-safe format
           ESCAPED_PROMPT=$(echo "$COVERAGE_PROMPT" | jq -Rs .)
           
