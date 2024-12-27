@@ -51,7 +51,7 @@ jobs:
                 - Edge cases not covered
                 - Integration test opportunities
                 - Mocking strategies
-            4. Wait for the user to verify the changes in the session and only create a new PR for the new increased coverage in session when prompted or commented by the user to do so.
+            4. Create a new PR for the new increased coverage in session with PR title "Devin-test: {...rest of the title description}"
 
             Guidelines:
             - Focus on meaningful test coverage
@@ -59,6 +59,18 @@ jobs:
             - Consider both unit and integration tests
 
         run: |
+          
+          # Get PR title
+          PR_TITLE=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" | \
+          jq -r '.title')
+          
+          # Convert PR title to lowercase for case-insensitive match
+          if echo "$PR_TITLE" | tr '[:upper:]' '[:lower:]' | grep -q "devin-test"; then
+            echo "PR title contains 'Devin-test', skipping Devin session creation"
+            exit 0
+          fi
+
           # Convert multiline string to JSON-safe format
           ESCAPED_PROMPT=$(echo "$COVERAGE_PROMPT" | jq -Rs .)
           
