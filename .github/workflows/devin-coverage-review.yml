@@ -138,7 +138,7 @@ jobs:
             - Focus on meaningful test coverage
             - Suggest specific test scenarios
             - Consider both unit and integration tests
-            - IMPORTANT: All test files must be created within the /tests directory
+            - IMPORTANT: All test files must be created within the packages/app-store/zoomvideo/lib/ directory
         run: |
           # Function to check session status
           check_session_status() {
