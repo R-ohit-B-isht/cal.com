@@ -10,7 +10,86 @@ permissions:
   issues: write
 
 jobs:
+  validate-pr-qualification:
+    runs-on: ubuntu-latest
+    outputs:
+      should_proceed: ${{ steps.check-qualification.outputs.should_proceed }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check PR qualification
+        id: check-qualification
+        run: |
+          # Get PR details
+          PR_INFO=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}")
+          
+          # Extract relevant information
+          IS_DRAFT=$(echo "$PR_INFO" | jq -r '.draft')
+          CHANGED_FILES=$(echo "$PR_INFO" | jq -r '.changed_files')
+          ADDITIONS=$(echo "$PR_INFO" | jq -r '.additions')
+          DELETIONS=$(echo "$PR_INFO" | jq -r '.deletions')
+          TOTAL_CHANGES=$((ADDITIONS + DELETIONS))
+          
+          # Define thresholds
+          MAX_FILES=10
+          MAX_CHANGES=500
+          
+          # Initialize qualification flag
+          SHOULD_PROCEED=true
+          DISQUALIFICATION_REASON=""
+          
+          # Check if PR is in draft mode
+          if [ "$IS_DRAFT" = "true" ]; then
+            SHOULD_PROCEED=false
+            DISQUALIFICATION_REASON="PR is in draft mode"
+          fi
+          
+          # Check number of changed files
+          if [ "$CHANGED_FILES" -gt "$MAX_FILES" ]; then
+            SHOULD_PROCEED=false
+            DISQUALIFICATION_REASON="Too many files changed (max: $MAX_FILES, actual: $CHANGED_FILES)"
+          fi
+          
+          # Check total number of changes
+          if [ "$TOTAL_CHANGES" -gt "$MAX_CHANGES" ]; then
+            SHOULD_PROCEED=false
+            DISQUALIFICATION_REASON="Too many line changes (max: $MAX_CHANGES, actual: $TOTAL_CHANGES)"
+          fi
+          
+          # Get PR title
+          PR_TITLE=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" | \
+            jq -r '.title')
+          
+          # Convert PR title to lowercase for case-insensitive match
+          if echo "$PR_TITLE" | tr '[:upper:]' '[:lower:]' | grep -q "devin-test"; then
+            echo "PR title contains 'Devin-test', skipping Devin session creation"
+            SHOULD_PROCEED=false
+            DISQUALIFICATION_REASON="PR title contains 'Devin-test', skipping Devin session creation since its already a Devin Test generation PR."
+          fi
+
+          # Set outputs
+          echo "should_proceed=$SHOULD_PROCEED" >> $GITHUB_OUTPUT
+          
+          # Add comment to PR if disqualified
+          if [ "$SHOULD_PROCEED" = "false" ]; then
+            COMMENT="🤖 Automated Test Generation Skipped\n\nReason: $DISQUALIFICATION_REASON\n\nRequirements:\n- PR must not be in draft mode\n- Maximum $MAX_FILES files can be changed\n- Maximum $MAX_CHANGES total line changes"
+            
+            curl -X POST \
+              -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"body\":\"$COMMENT\"}" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments"
+          fi
+
   coverage-suggestions:
+    needs: validate-pr-qualification
+    if: needs.validate-pr-qualification.outputs.should_proceed == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -27,11 +106,13 @@ jobs:
             jq -r '[.[].filename] | @json')
           echo "files=$FILES" >> $GITHUB_OUTPUT
 
-      - name: Create Devin Coverage Session
+      - name: Create and Monitor Devin Coverage Session
         id: devin-coverage
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
           FILES_TO_REVIEW: ${{ steps.pr-files.outputs.files }}
+          MAX_POLLING_TIME: 3600
+          POLL_INTERVAL: 30
           COVERAGE_PROMPT: |
             You are PR Coverage Reviewer Devin. Your task is to review the following pull request and suggest improvements to test coverage.
             --user-afk
@@ -57,13 +138,22 @@ jobs:
             - Focus on meaningful test coverage
             - Suggest specific test scenarios
             - Consider both unit and integration tests
-
+            - IMPORTANT: All test files must be created within the /tests directory
         run: |
-          
+          # Function to check session status
+          check_session_status() {
+            local session_id=$1
+            local response=$(curl -s -H "Authorization: Bearer $DEVIN_API_KEY" \
+              -H "Content-Type: application/json" \
+              "https://api.devin.ai/v1/session/${session_id}")
+            
+            echo "$response"
+          }
+
           # Get PR title
           PR_TITLE=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
-          "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" | \
-          jq -r '.title')
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" | \
+            jq -r '.title')
           
           # Convert PR title to lowercase for case-insensitive match
           if echo "$PR_TITLE" | tr '[:upper:]' '[:lower:]' | grep -q "devin-test"; then
@@ -74,18 +164,95 @@ jobs:
           # Convert multiline string to JSON-safe format
           ESCAPED_PROMPT=$(echo "$COVERAGE_PROMPT" | jq -Rs .)
           
+          # Create Devin session
           RESPONSE=$(curl -s -X POST \
             -H "Authorization: Bearer $DEVIN_API_KEY" \
             -H "Content-Type: application/json" \
             -d "{\"prompt\": $ESCAPED_PROMPT}" \
             "https://api.devin.ai/v1/sessions")
           
-          # Check for errors and set outputs
+          # Check for errors in session creation
           if [ "$(echo "$RESPONSE" | jq -r '.error')" != "null" ]; then
             echo "Error creating Devin session: $(echo "$RESPONSE" | jq -r '.error')"
             exit 1
           fi
           
-          echo "session-id=$(echo "$RESPONSE" | jq -r '.session_id')" >> $GITHUB_OUTPUT
-          echo "session-url=$(echo "$RESPONSE" | jq -r '.url')" >> $GITHUB_OUTPUT
-          echo "Devin coverage session created successfully: $(echo "$RESPONSE")"
+          # Extract session information
+          SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id')
+          SESSION_URL=$(echo "$RESPONSE" | jq -r '.url')
+          
+          echo "Session ID: $SESSION_ID"
+          echo "Session URL: $SESSION_URL"
+
+          # Initialize polling variables
+          START_TIME=$(date +%s)
+          CURRENT_TIME=$(date +%s)
+          
+          # Poll until completion or timeout
+          while [ $((CURRENT_TIME - START_TIME)) -lt $MAX_POLLING_TIME ]; do
+            STATUS_RESPONSE=$(check_session_status "$SESSION_ID")
+            STATUS=$(echo "$STATUS_RESPONSE" | jq -r '.status_enum')
+            
+            echo "Current status: $STATUS"
+            
+            # Check if session is complete
+            if [[ "$STATUS" == "blocked" || "$STATUS" == "stopped" || "$STATUS" == "finished" ]]; then
+              echo "Session complete with status: $STATUS"
+              echo "session-id=$SESSION_ID" >> $GITHUB_OUTPUT
+              echo "session-url=$SESSION_URL" >> $GITHUB_OUTPUT
+              echo "session-status=$STATUS" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            
+            # Wait before next poll
+            sleep $POLL_INTERVAL
+            CURRENT_TIME=$(date +%s)
+          done
+          
+          echo "Polling timed out after ${MAX_POLLING_TIME} seconds"
+          exit 1
+
+  validate-test-paths:
+    needs: coverage-suggestions
+    if: ${{ always() && needs.validate-pr-qualification.outputs.should_proceed == 'true' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate test file paths
+        env:
+          ALLOWED_TEST_PATH: "packages/app-store/zoomvideo/lib/"  # Customize this path as needed
+        run: |
+          # Get the Devin PR number from the PR title
+          BASE_PR_NUMBER="${{ github.event.pull_request.number }}"
+          DEVIN_PR=$(gh pr list --search "Devin-test in:title" --json number,title,files --limit 1)
+          
+          if [ -z "$DEVIN_PR" ]; then
+            echo "No Devin test PR found"
+            exit 0
+          fi
+          
+          # Check if any files are outside the allowed test path
+          INVALID_FILES=$(echo "$DEVIN_PR" | jq -r '.[0].files[] | select(.path | startswith("'"$ALLOWED_TEST_PATH"'") | not) | .path')
+          
+          if [ ! -z "$INVALID_FILES" ]; then
+            echo "❌ Error: The following files are outside the allowed test directory ($ALLOWED_TEST_PATH):"
+            echo "$INVALID_FILES"
+            
+            # Add comment to the original PR
+            COMMENT="❌ **Test Path Validation Failed**\n\nDevin-generated tests contain files outside the allowed test directory (\`$ALLOWED_TEST_PATH\`):\n\`\`\`\n$INVALID_FILES\n\`\`\`\n\nPlease update the test locations to be within the allowed directory."
+            
+            curl -X POST \
+              -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"body\":\"$COMMENT\"}" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/$BASE_PR_NUMBER/comments"
+            
+            exit 1
+          fi
+          
+          echo "✅ All test files are in the correct directory"
