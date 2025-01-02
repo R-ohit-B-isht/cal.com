@@ -133,6 +133,7 @@ jobs:
                 - Integration test opportunities
                 - Mocking strategies
             4. Create a new PR for the new increased coverage in session with PR title "test: Devin-test - {...rest of the title description}"
+            5. Return the PR number in chat as text in this exact format: PR#{number}, e.g. PR#53
 
             Guidelines:
             - Focus on meaningful test coverage
@@ -201,6 +202,8 @@ jobs:
               echo "session-id=$SESSION_ID" >> $GITHUB_OUTPUT
               echo "session-url=$SESSION_URL" >> $GITHUB_OUTPUT
               echo "session-status=$STATUS" >> $GITHUB_OUTPUT
+              PR_NUMBER=$(echo "$STATUS_RESPONSE" | jq -r '.structured_output' | grep -oP 'PR#\K\d+')
+              echo "devin-pr-number=$PR_NUMBER" >> $GITHUB_OUTPUT
               exit 0
             fi
             
@@ -225,33 +228,22 @@ jobs:
 
       - name: Validate test file paths
         env:
-          ALLOWED_TEST_PATH: "packages/app-store/zoomvideo/lib/"  # Customize this path as needed
+          ALLOWED_TEST_PATH: "packages/app-store/zoomvideo/lib/"
+          GIT_TOKEN: ${{ secrets.GIT_TOKEN }}
+          DEVIN_PR: ${{ steps.devin-coverage.outputs.devin-pr-number }}
         run: |
-          # Get the Devin PR number from the PR title
-          BASE_PR_NUMBER="${{ github.event.pull_request.number }}"
-          DEVIN_PR=$(gh pr list --search "Devin-test in:title" --json number,title,files --limit 1)
+          PR_FILES=$(curl -s -H "Authorization: token $GIT_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/$DEVIN_PR/files")
           
-          if [ -z "$DEVIN_PR" ]; then
-            echo "No Devin test PR found"
-            exit 0
-          fi
-          
-          # Check if any files are outside the allowed test path
-          INVALID_FILES=$(echo "$DEVIN_PR" | jq -r '.[0].files[] | select(.path | startswith("'"$ALLOWED_TEST_PATH"'") | not) | .path')
+          INVALID_FILES=$(echo "$PR_FILES" | jq -r '.[] | select(.filename | startswith("'"$ALLOWED_TEST_PATH"'") | not) | .filename')
           
           if [ ! -z "$INVALID_FILES" ]; then
-            echo "❌ Error: The following files are outside the allowed test directory ($ALLOWED_TEST_PATH):"
-            echo "$INVALID_FILES"
-            
-            # Add comment to the original PR
-            COMMENT="❌ **Test Path Validation Failed**\n\nDevin-generated tests contain files outside the allowed test directory (\`$ALLOWED_TEST_PATH\`):\n\`\`\`\n$INVALID_FILES\n\`\`\`\n\nPlease update the test locations to be within the allowed directory."
-            
+            echo "❌ Files outside allowed directory: $INVALID_FILES"
             curl -X POST \
-              -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
+              -H "Authorization: token $GIT_TOKEN" \
               -H "Content-Type: application/json" \
-              -d "{\"body\":\"$COMMENT\"}" \
-              "https://api.github.com/repos/${{ github.repository }}/issues/$BASE_PR_NUMBER/comments"
-            
+              -d "{\"body\":\"❌ **Test Path Validation Failed**\n\nFiles outside \`$ALLOWED_TEST_PATH\`:\n\`\`\`\n$INVALID_FILES\n\`\`\`\"}" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments"
             exit 1
           fi
           
