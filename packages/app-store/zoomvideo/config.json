@@ -1,0 +1,11 @@
+{
+  "slug": "zoomvideo",
+  "type": "zoom_video",
+  "variant": "conferencing",
+  "title": "Zoom Video",
+  "description": "Zoom is a video communications platform that allows you to host and join virtual meetings.",
+  "categories": ["video"],
+  "isTemplate": false,
+  "email": "help@cal.com",
+  "dirName": "zoomvideo"
+}
