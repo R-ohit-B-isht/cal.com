@@ -111,7 +111,7 @@ jobs:
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
           FILES_TO_REVIEW: ${{ steps.pr-files.outputs.files }}
-          MAX_POLLING_TIME: 3600
+          MAX_POLLING_TIME: 10800
           POLL_INTERVAL: 30
           COVERAGE_PROMPT: |
             You are PR Coverage Reviewer Devin. Your task is to review the following pull request and suggest improvements to test coverage.
