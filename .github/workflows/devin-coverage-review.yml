@@ -132,7 +132,7 @@ jobs:
                 - Edge cases not covered
                 - Integration test opportunities
                 - Mocking strategies
-            4. Create a new PR for the new increased coverage in session with PR title "Devin-test: {...rest of the title description}"
+            4. Create a new PR for the new increased coverage in session with PR title "test: Devin-test - {...rest of the title description}"
 
             Guidelines:
             - Focus on meaningful test coverage
