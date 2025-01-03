@@ -167,22 +167,22 @@ jobs:
           # Convert multiline string to JSON-safe format
           ESCAPED_PROMPT=$(echo "$COVERAGE_PROMPT" | jq -Rs .)
           
-          # Create Devin session
-          # RESPONSE=$(curl -s -X POST \
-          #   -H "Authorization: Bearer $DEVIN_API_KEY" \
-          #   -H "Content-Type: application/json" \
-          #   -d "{\"prompt\": $ESCAPED_PROMPT}" \
-          #   "https://api.devin.ai/v1/sessions")
+          Create Devin session
+          RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Bearer $DEVIN_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"prompt\": $ESCAPED_PROMPT}" \
+            "https://api.devin.ai/v1/sessions")
           
-          # # Check for errors in session creation
-          # if [ "$(echo "$RESPONSE" | jq -r '.error')" != "null" ]; then
-          #   echo "Error creating Devin session: $(echo "$RESPONSE" | jq -r '.error')"
-          #   exit 1
-          # fi
+          # Check for errors in session creation
+          if [ "$(echo "$RESPONSE" | jq -r '.error')" != "null" ]; then
+            echo "Error creating Devin session: $(echo "$RESPONSE" | jq -r '.error')"
+            exit 1
+          fi
           
           # Extract session information
-          SESSION_ID="88a4ffc3f3f34d829914e12344accff1"
-          SESSION_URL="https://app.devin.ai/sessions/88a4ffc3f3f34d829914e12344accff1"
+          SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id')
+          SESSION_URL=$(echo "$RESPONSE" | jq -r '.url')
           
           echo "Session ID: $SESSION_ID"
           echo "Session URL: $SESSION_URL"
