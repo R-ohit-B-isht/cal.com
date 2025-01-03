@@ -92,7 +92,7 @@ jobs:
     if: needs.validate-pr-qualification.outputs.should_proceed == 'true'
     runs-on: ubuntu-latest
     outputs:
-      devin_pr_number: ${{ steps.step_id.outputs.devin_pr_number }}
+      devin_pr_number: ${{ steps.devin-coverage.outputs.devin_pr_number }}
 
     steps:
       - name: Checkout code
