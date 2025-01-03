@@ -91,6 +91,8 @@ jobs:
     needs: validate-pr-qualification
     if: needs.validate-pr-qualification.outputs.should_proceed == 'true'
     runs-on: ubuntu-latest
+    outputs:
+      devin-pr-number: ${{ steps.step_id.outputs.devin-pr-number }}
 
     steps:
       - name: Checkout code
