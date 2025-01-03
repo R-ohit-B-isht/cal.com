@@ -220,7 +220,7 @@ jobs:
           exit 1
 
   validate-test-paths:
-    needs: coverage-suggestions
+    needs: [validate-pr-qualification, coverage-suggestions]
     if: ${{ always() && needs.validate-pr-qualification.outputs.should_proceed == 'true' }}
     runs-on: ubuntu-latest
 
@@ -234,9 +234,8 @@ jobs:
         env:
           ALLOWED_TEST_PATH: "packages/app-store/zoomvideo/lib/"
           GIT_TOKEN: ${{ secrets.GIT_TOKEN }}
-          DEVIN_PR: ${{ steps.devin-coverage.outputs.devin_pr_number }}
+          DEVIN_PR: ${{ needs.coverage-suggestions.outputs.devin_pr_number }}
         run: |
-          echo $DEVIN_PR "hi" ${{ steps.devin-coverage.outputs.devin_pr_number }} 
           if [ -z "$DEVIN_PR" ]; then
             echo "NO PR NUMBER RECIEVED"
             exit 1
