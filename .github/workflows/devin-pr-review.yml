@@ -48,10 +48,10 @@ jobs:
 
             Your tasks:
             1. Review the changes in the PR files
-            2. Analyze each changed file for conformance violations
-            3. Provide specific, actionable feedback for any violations
-            4. If no violations are found, confirm compliance
-            5. Push feedback as comments on the PR
+            2. Analyze each changed file for conformance violations according to the provided Code Conformance File from Code Conformance Rules File Path.
+            3. Provide specific, actionable feedback for any violations against the provided Code Conformance File from Code Conformance Rules File Path.
+            4. If no violations are found, confirm compliance.
+            5. Push feedback as comments on the PR in brief describing the exact issue with lesser verbosity in comment.
 
             Guidelines:
             - Be specific about which rules are violated
