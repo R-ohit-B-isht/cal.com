@@ -167,7 +167,7 @@ jobs:
           # Convert multiline string to JSON-safe format
           ESCAPED_PROMPT=$(echo "$COVERAGE_PROMPT" | jq -Rs .)
           
-          Create Devin session
+          # Create Devin session
           RESPONSE=$(curl -s -X POST \
             -H "Authorization: Bearer $DEVIN_API_KEY" \
             -H "Content-Type: application/json" \
