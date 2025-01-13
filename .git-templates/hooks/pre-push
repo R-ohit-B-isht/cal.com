@@ -1,0 +1,46 @@
+#!/bin/bash
+
+# Configuration
+DEVIN_API_ENDPOINT="https://api.devin.ai/v1"
+
+# Helper functions
+is_empty() {
+    local var="$1"
+    [[ -z "${var// }" ]]
+}
+
+log_error() {
+    echo "❌ Error: $1" >&2
+}
+
+log_info() {
+    echo "ℹ️ $1"
+}
+
+# Get current branch and PR information
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+PR_AUTHOR=$(gh pr view "$current_branch" --json author --jq '.author.login' 2>/dev/null)
+EXIT_CODE=$?
+
+# Check if there's an existing PR
+if [ $EXIT_CODE -ne 0 ]; then
+    log_info "No existing PR found; continuing push..."
+    exit 0
+fi
+
+# Verify PR author
+if ! is_empty "$PR_AUTHOR"; then
+    if [ "$PR_AUTHOR" = "$DEVIN_AUTHOR" ]; then
+        log_info "PR author is Devin; continuing push..."
+        echo "PR author is Devin; continuing push..." 
+        exit 0
+    else
+        log_error "Devin can only push to PR branches it created."
+        log_error "This PR is authored by: $PR_AUTHOR"
+        log_error "This is a temporary safeguard for auto-test generation."
+        exit 1
+    fi
+fi
+
+# If we get here, all checks passed
+exit 0
