@@ -184,7 +184,7 @@ Where {level} can be one of the following:
 `5` for error \
 `6` for fatal
 
-When you set `NEXT_PUBLIC_LOGGER_LEVEL={level}` in your .env file, it enables logging at that level and higher. Here's how it works:
+When you set `NEXT_PUBLIC_LOGGER_LEVEL={level}` in your .env file, it enables logging at that level and higher. If no level is set, it defaults to level 3 (info). Here's how it works:
 
 The logger will include all logs that are at the specified level or higher. For example: \
 
