@@ -228,14 +228,19 @@ jobs:
                 echo "session-id=$SESSION_ID" >> $GITHUB_OUTPUT
                 echo "session-url=${SESSION_URLS[i]}" >> $GITHUB_OUTPUT
                 echo "session-status=$STATUS" >> $GITHUB_OUTPUT
-                
+              
+                # Attempt to extract PR number, handle gracefully if not found
                 PR_NUMBER=$(echo "$STATUS_RESPONSE" | jq -r '.structured_output' | grep -oP 'PR#\K\d+')
-                echo $PR_NUMBER
-                echo "devin_pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+                if [ -n "$PR_NUMBER" ]; then
+                  echo "PR number extracted: $PR_NUMBER"
+                  echo "devin_pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+                else
+                  echo "PR number not found in response. Returning session URL instead."
+                  echo "Session URL: ${SESSION_URLS[i]}"
+                fi
                 
                 break 2  # Exit both loops once a session finishes
               fi
-            done
             
             # Wait before next poll
             sleep $POLL_INTERVAL
