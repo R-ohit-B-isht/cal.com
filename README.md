@@ -184,12 +184,13 @@ Where {level} can be one of the following:
 `5` for error \
 `6` for fatal
 
-When you set `NEXT_PUBLIC_LOGGER_LEVEL={level}` in your .env file, it enables logging at that level and higher. Here's how it works:
+When you set `NEXT_PUBLIC_LOGGER_LEVEL={level}` in your .env file, it enables logging at that level and higher. The default level is 4 (warn) if not specified. Here's how it works:
 
 The logger will include all logs that are at the specified level or higher. For example: \
 
-- If you set `NEXT_PUBLIC_LOGGER_LEVEL=2`, it will log from level 2 (debug) upwards, meaning levels 2 (debug), 3 (info), 4 (warn), 5 (error), and (fatal) will be logged. \
+- If you set `NEXT_PUBLIC_LOGGER_LEVEL=2`, it will log from level 2 (debug) upwards, meaning levels 2 (debug), 3 (info), 4 (warn), 5 (error), and 6 (fatal) will be logged. \
 - If you set `NEXT_PUBLIC_LOGGER_LEVEL=3`, it will log from level 3 (info) upwards, meaning levels 3 (info), 4 (warn), 5 (error), and 6 (fatal) will be logged, but level 2 (debug) and level 1 (trace) will be ignored. \
+- By default (level 4), only warn, error, and fatal logs will be shown. Set a lower level to see more detailed logs. \
 
 ```sh
 echo 'NEXT_PUBLIC_LOGGER_LEVEL=3' >> .env
