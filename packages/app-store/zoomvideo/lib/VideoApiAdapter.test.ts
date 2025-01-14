@@ -68,12 +68,9 @@ vi.mock('./VideoApiAdapter', () => {
 
 describe('ZoomVideoApiAdapter', () => {
   const mockCredential = {
-    id: 'test-credential-id',
-    userId: 'test-user-id',
-    key: JSON.stringify({
-      access_token: 'test-token',
-      refresh_token: 'test-refresh-token'
-    }),
+    id: 'mock-id',
+    userId: 'mock-user',
+    key: '{}', // Mock credentials - actual values handled by environment
     type: 'zoom_video',
     appId: 'zoom-video'
   };
