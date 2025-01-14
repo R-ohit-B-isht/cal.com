@@ -4,11 +4,23 @@
   "version": "0.0.0",
   "main": "./index.ts",
   "description": "Zoom is a secure and reliable video platform that supports all of your online communication needs. It can provide everything from one on one meetings, chat, phone, webinars, and large-scale online events. Available with both desktop, web, and mobile versions.",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
   "dependencies": {
     "@calcom/lib": "*",
     "@calcom/prisma": "*"
   },
   "devDependencies": {
-    "@calcom/types": "*"
+    "@calcom/types": "*",
+    "@testing-library/dom": "^10.4.0",
+    "@types/node": "^22.10.6",
+    "@vitest/coverage-c8": "^0.33.0",
+    "node-fetch": "^3.3.2",
+    "vite": "^5.0.0",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^2.1.8"
   }
 }
