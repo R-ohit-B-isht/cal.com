@@ -94,12 +94,12 @@ const testCredential = {
     scope: "meeting:write meeting:read",
     token_type: "Bearer",
     expiry_date: 1625097600000,
-    access_token: "test_access_token",
-    refresh_token: "test_refresh_token",
+    access_token: "MOCK_ACCESS_TOKEN",
+    refresh_token: "MOCK_REFRESH_TOKEN",
   },
   type: "zoom_video",
   userId: 1,
-  user: { email: "test@example.com" },
+  user: { email: "mock.user@example.com" },
   teamId: 1,
 };
 
