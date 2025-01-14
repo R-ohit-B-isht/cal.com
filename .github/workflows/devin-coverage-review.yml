@@ -176,7 +176,7 @@ jobs:
           ESCAPED_PROMPT=$(echo "$COVERAGE_PROMPT" | jq -Rs .)
           
           # Number of Devin sessions to create
-          N=5  # You can adjust this value as needed
+          N=2  # You can adjust this value as needed
           
           # Arrays to store session details
           SESSION_IDS=()
@@ -241,7 +241,7 @@ jobs:
                 
                 break 2  # Exit both loops once a session finishes
               fi
-            
+            done
             # Wait before next poll
             sleep $POLL_INTERVAL
             CURRENT_TIME=$(date +%s)
