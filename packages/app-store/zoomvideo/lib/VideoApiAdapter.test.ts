@@ -11,8 +11,8 @@ describe("ZoomVideoApiAdapter", () => {
     id: 123,
     type: "zoom_video",
     key: {
-      access_token: "MOCK_ACCESS_TOKEN",
-      refresh_token: "MOCK_REFRESH_TOKEN",
+      access_token: process.env.MOCK_ZOOM_ACCESS_TOKEN || "mock_token",
+      refresh_token: process.env.MOCK_ZOOM_REFRESH_TOKEN || "mock_refresh",
       expires_in: 3599,
     },
     userId: 1,
