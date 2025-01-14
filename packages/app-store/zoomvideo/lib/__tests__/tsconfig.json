@@ -1,0 +1,16 @@
+{
+  "extends": "../../../../../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "jest", "@jest/globals"],
+    "baseUrl": "../../../../../",
+    "paths": {
+      "@calcom/*": ["packages/*"]
+    },
+    "esModuleInterop": true,
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "strict": true,
+    "moduleResolution": "node"
+  },
+  "include": ["./**/*.ts", "./**/*.tsx"]
+}
