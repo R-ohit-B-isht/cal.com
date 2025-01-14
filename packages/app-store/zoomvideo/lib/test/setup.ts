@@ -1,4 +1,4 @@
-import { vi } from "vitest";
+import { vi, beforeEach } from "vitest";
 import dayjs from "@calcom/dayjs";
 
 // Mock dayjs
@@ -25,15 +25,22 @@ vi.mock("@calcom/lib/logger", () => ({
   },
 }));
 
-// Mock constants
-vi.mock("@calcom/lib/constants", () => ({
-  APP_CREDENTIAL_SHARING_ENABLED: true,
-  CREDENTIAL_SYNC_ENDPOINT: "http://localhost:3000",
-  CREDENTIAL_SYNC_SECRET: "test-secret",
-  CREDENTIAL_SYNC_SECRET_HEADER_NAME: "x-api-key",
-}));
-
 // Mock safeStringify
 vi.mock("@calcom/lib/safeStringify", () => ({
   safeStringify: JSON.stringify,
 }));
+
+// Mock external dependencies
+vi.mock("../../_utils/oauth/OAuthManager", () => ({
+  OAuthManager: class {
+    constructor() {}
+    request() {
+      return Promise.resolve({ json: {} });
+    }
+  },
+}));
+
+// Reset mocks before each test
+beforeEach(() => {
+  vi.clearAllMocks();
+});
