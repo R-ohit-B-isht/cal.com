@@ -1,4 +1,32 @@
 /// <reference types="vitest" />
+
+/**
+ * @file VideoApiAdapter.test.ts
+ * @description Test suite for the Zoom Video API Adapter implementation
+ * 
+ * This test suite covers:
+ * 1. Recurrence Functionality
+ *    - Daily, weekly, and monthly recurring events
+ *    - End date vs count scenarios
+ *    - Different interval values
+ * 
+ * 2. Meeting Management
+ *    - Creation with various settings
+ *    - Deletion with error handling
+ *    - User settings integration
+ * 
+ * 3. Error Handling & Edge Cases
+ *    - Network errors
+ *    - Rate limiting
+ *    - Invalid responses
+ *    - Missing user settings
+ * 
+ * Mocking Strategy:
+ * - Uses __mocks__/zoom-api.ts for API response mocking
+ * - Global fetch mocking for API calls
+ * - Credential and event mocking in beforeEach hooks
+ */
+
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { Frequency } from "@calcom/prisma/zod-utils";
 import type { CalendarEvent } from "@calcom/types/Calendar";
@@ -204,6 +232,50 @@ describe("ZoomVideoApiAdapter", () => {
       } as Response);
 
       await expect(adapter.deleteMeeting("123456789")).rejects.toThrow("Failed to delete meeting");
+    });
+  });
+
+  describe('edge cases and error handling', () => {
+    it('should handle network errors', async () => {
+      const adapter = ZoomVideoApiAdapter(mockCredential);
+      vi.spyOn(global, 'fetch').mockRejectedValueOnce(new Error('Network error'));
+
+      await expect(adapter.createMeeting(mockCalendarEvent))
+        .rejects.toThrow('Unexpected error');
+    });
+
+    it('should handle rate limiting', async () => {
+      const adapter = ZoomVideoApiAdapter(mockCredential);
+      vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        json: () => Promise.resolve({ message: 'Too many requests' })
+      } as Response);
+
+      await expect(adapter.createMeeting(mockCalendarEvent))
+        .rejects.toThrow('Unexpected error');
+    });
+
+    it('should handle missing user settings', async () => {
+      const adapter = ZoomVideoApiAdapter(mockCredential);
+      vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({})
+      } as Response);
+
+      const result = await adapter.createMeeting(mockCalendarEvent);
+      expect(result).toHaveProperty('password', '');
+    });
+
+    it('should handle invalid response format', async () => {
+      const adapter = ZoomVideoApiAdapter(mockCredential);
+      vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ invalid: 'response' })
+      } as Response);
+
+      await expect(adapter.createMeeting(mockCalendarEvent))
+        .rejects.toThrow();
     });
   });
 });
