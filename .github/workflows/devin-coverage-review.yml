@@ -143,16 +143,24 @@ jobs:
             - Consider both unit and integration tests
             - IMPORTANT: All test files must be created within the packages/app-store/zoomvideo/lib/ directory
         run: |
-          # Function to check session status
+         # Function to check session status
           check_session_status() {
             local session_id=$1
-            local response=$(curl -s -H "Authorization: Bearer $DEVIN_API_KEY" \
-              -H "Content-Type: application/json" \
-              "https://api.devin.ai/v1/session/${session_id}")
-            
-            echo "$response"
+            curl -s -H "Authorization: Bearer $DEVIN_API_KEY" \
+                 -H "Content-Type: application/json" \
+                 "https://api.devin.ai/v1/session/${session_id}"
           }
-
+          
+          # Function to send "SLEEP" message to a session
+          sleep_session() {
+            local session_id=$1
+            curl -s -X POST \
+                 -H "Authorization: Bearer $DEVIN_API_KEY" \
+                 -H "Content-Type: application/json" \
+                 -d '{"message": "SLEEP"}' \
+                 "https://api.devin.ai/v1/session/${session_id}/message"
+          }
+          
           # Get PR title
           PR_TITLE=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" | \
@@ -163,61 +171,93 @@ jobs:
             echo "PR title contains 'Devin-test', skipping Devin session creation"
             exit 0
           fi
-
+          
           # Convert multiline string to JSON-safe format
           ESCAPED_PROMPT=$(echo "$COVERAGE_PROMPT" | jq -Rs .)
           
-          # Create Devin session
-          RESPONSE=$(curl -s -X POST \
-            -H "Authorization: Bearer $DEVIN_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d "{\"prompt\": $ESCAPED_PROMPT}" \
-            "https://api.devin.ai/v1/sessions")
+          # Number of Devin sessions to create
+          N=5  # You can adjust this value as needed
           
-          # Check for errors in session creation
-          if [ "$(echo "$RESPONSE" | jq -r '.error')" != "null" ]; then
-            echo "Error creating Devin session: $(echo "$RESPONSE" | jq -r '.error')"
-            exit 1
-          fi
+          # Arrays to store session details
+          SESSION_IDS=()
+          SESSION_URLS=()
           
-          # Extract session information
-          SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id')
-          SESSION_URL=$(echo "$RESPONSE" | jq -r '.url')
+          # Create N Devin sessions
+          for ((i = 1; i <= N; i++)); do
+            RESPONSE=$(curl -s -X POST \
+              -H "Authorization: Bearer $DEVIN_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d "{\"prompt\": $ESCAPED_PROMPT}" \
+              "https://api.devin.ai/v1/sessions")
+            
+            # Check for errors in session creation
+            if [ "$(echo "$RESPONSE" | jq -r '.error')" != "null" ]; then
+              echo "Error creating Devin session: $(echo "$RESPONSE" | jq -r '.error')"
+              exit 1
+            fi
+            
+            # Extract session information
+            SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id')
+            SESSION_URL=$(echo "$RESPONSE" | jq -r '.url')
+            
+            SESSION_IDS+=("$SESSION_ID")
+            SESSION_URLS+=("$SESSION_URL")
+            
+            echo "Created session $i with ID: $SESSION_ID, URL: $SESSION_URL"
+          done
           
-          echo "Session ID: $SESSION_ID"
-          echo "Session URL: $SESSION_URL"
-
-          # Initialize polling variables
+          # Poll all sessions concurrently
           START_TIME=$(date +%s)
           CURRENT_TIME=$(date +%s)
-          
-          # Poll until completion or timeout
+          FINISHED_SESSION=""
           while [ $((CURRENT_TIME - START_TIME)) -lt $MAX_POLLING_TIME ]; do
-            STATUS_RESPONSE=$(check_session_status "$SESSION_ID")
-            STATUS=$(echo "$STATUS_RESPONSE" | jq -r '.status_enum')
-            
-            echo "Current status: $STATUS"
-            
-            # Check if session is complete
-            if [[ "$STATUS" == "blocked" || "$STATUS" == "stopped" || "$STATUS" == "finished" ]]; then
-              echo "Session complete with status: $STATUS"
-              echo "session-id=$SESSION_ID" >> $GITHUB_OUTPUT
-              echo "session-url=$SESSION_URL" >> $GITHUB_OUTPUT
-              echo "session-status=$STATUS" >> $GITHUB_OUTPUT
-              PR_NUMBER=$(echo "$STATUS_RESPONSE" | jq -r '.structured_output' | grep -oP 'PR#\K\d+')
-              echo $PR_NUMBER
-              echo "devin_pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
-              echo $devin_pr_number
-              exit 0
-            fi
+            for i in "${!SESSION_IDS[@]}"; do
+              SESSION_ID="${SESSION_IDS[i]}"
+              if [ -z "$SESSION_ID" ]; then
+                continue  # Skip if the session is already marked as finished
+              fi
+              
+              STATUS_RESPONSE=$(check_session_status "$SESSION_ID")
+              STATUS=$(echo "$STATUS_RESPONSE" | jq -r '.status_enum')
+              
+              echo "Session $SESSION_ID status: $STATUS"
+              
+              if [[ "$STATUS" == "blocked" || "$STATUS" == "stopped" || "$STATUS" == "finished" ]]; then
+                echo "Session $SESSION_ID finished with status: $STATUS"
+                FINISHED_SESSION="$SESSION_ID"
+                echo "session-id=$SESSION_ID" >> $GITHUB_OUTPUT
+                echo "session-url=${SESSION_URLS[i]}" >> $GITHUB_OUTPUT
+                echo "session-status=$STATUS" >> $GITHUB_OUTPUT
+                
+                PR_NUMBER=$(echo "$STATUS_RESPONSE" | jq -r '.structured_output' | grep -oP 'PR#\K\d+')
+                echo $PR_NUMBER
+                echo "devin_pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+                
+                break 2  # Exit both loops once a session finishes
+              fi
+            done
             
             # Wait before next poll
             sleep $POLL_INTERVAL
             CURRENT_TIME=$(date +%s)
           done
           
-          echo "Polling timed out after ${MAX_POLLING_TIME} seconds"
-          exit 1
+          if [ -z "$FINISHED_SESSION" ]; then
+            echo "Polling timed out after ${MAX_POLLING_TIME} seconds"
+            exit 1
+          fi
+          
+          # Send "SLEEP" message to other sessions
+          for i in "${!SESSION_IDS[@]}"; do
+            SESSION_ID="${SESSION_IDS[i]}"
+            if [ "$SESSION_ID" != "$FINISHED_SESSION" ]; then
+              echo "Putting session $SESSION_ID to sleep"
+              sleep_session "$SESSION_ID"
+            fi
+          done
+          
+          echo "All other sessions have been put to sleep."
+          exit 0
 
   validate-test-paths:
     needs: [validate-pr-qualification, coverage-suggestions]
