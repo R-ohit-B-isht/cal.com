@@ -1,9 +1,10 @@
+import type { TFunction } from "next-i18next";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import type { CalendarEvent } from "@calcom/types/Calendar";
 import type { CredentialPayload } from "@calcom/types/Credential";
 
-import { VideoApiAdapter } from "../VideoApiAdapter";
+import VideoApiAdapter from "../VideoApiAdapter";
 
 vi.mock("../getZoomAppKeys", () => ({
   getZoomAppKeys: vi.fn(),
@@ -11,15 +12,18 @@ vi.mock("../getZoomAppKeys", () => ({
 
 describe("VideoApiAdapter", () => {
   const mockCredential: CredentialPayload = {
-    id: 123,
+    id: 1,
     type: "zoom_video",
     key: {
-      access_token: "mock-access-token",
-      refresh_token: "mock-refresh-token",
-      expires_in: 3599,
+      access_token: "MOCK_TOKEN_FOR_TESTING",
+      refresh_token: "MOCK_REFRESH_FOR_TESTING",
+      expires_in: 3600,
     },
-    userId: 456,
+    userId: 1,
     appId: "zoom",
+    teamId: null,
+    invalid: null,
+    user: { email: "test@example.com" },
   };
 
   beforeEach(() => {
@@ -33,10 +37,22 @@ describe("VideoApiAdapter", () => {
         type: "zoom_video",
         title: "Test Meeting",
         description: "Test Description",
-        startTime: new Date("2024-01-20T10:00:00Z"),
-        endTime: new Date("2024-01-20T11:00:00Z"),
-        organizer: { email: "test@example.com", name: "Test User", timeZone: "UTC" },
-        attendees: [{ email: "attendee@example.com", name: "Test Attendee", timeZone: "UTC" }],
+        startTime: "2024-01-20T10:00:00Z",
+        endTime: "2024-01-20T11:00:00Z",
+        organizer: {
+          email: "test@example.com",
+          name: "Test User",
+          timeZone: "UTC",
+          language: { translate: ((key: string) => key) as TFunction, locale: "en" },
+        },
+        attendees: [
+          {
+            email: "attendee@example.com",
+            name: "Test Attendee",
+            timeZone: "UTC",
+            language: { translate: ((key: string) => key) as TFunction, locale: "en" },
+          },
+        ],
       };
 
       const mockZoomResponse = {
@@ -51,6 +67,7 @@ describe("VideoApiAdapter", () => {
       });
 
       const adapter = VideoApiAdapter(mockCredential);
+      if (!adapter) throw new Error("Failed to create adapter");
       const result = await adapter.createMeeting(mockEvent);
 
       expect(result).toEqual({
