@@ -54,13 +54,13 @@ const testCredential = {
   key: {
     scope: "meeting:write",
     token_type: "Bearer",
-    expiry_date: 1625097600000,
-    access_token: "test_access_token",
-    refresh_token: "test_refresh_token",
+    expiry_date: new Date().getTime(),
+    access_token: "MOCK_TOKEN",
+    refresh_token: "MOCK_REFRESH",
   },
   type: "zoom_video",
   userId: 1,
-  user: { email: "test@example.com" },
+  user: { email: "mock@example.test" },
   teamId: 1,
 };
 
