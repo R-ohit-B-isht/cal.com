@@ -1,10 +1,18 @@
+/// <reference types="node" />
+import type { Prisma } from "@prisma/client";
 import { expect, test, vi, describe, beforeEach } from "vitest";
+
+import dayjs from "@calcom/dayjs";
+import { Frequency } from "@calcom/prisma/zod-utils";
+import type { CalendarEvent } from "@calcom/types/Calendar";
+import type { CredentialPayload } from "@calcom/types/Credential";
+import type { VideoCallData } from "@calcom/types/VideoApiAdapter";
+
 import { OAuthManager } from "../../_utils/oauth/OAuthManager";
 import { internalServerErrorResponse, successResponse } from "../../_utils/testUtils";
 import prismaMock from "../../../../tests/libs/__mocks__/prismaMock";
+import config from "../config.json";
 import VideoApiAdapter from "./VideoApiAdapter";
-import { Frequency } from "@calcom/prisma/zod-utils";
-import type { CalendarEvent } from "@calcom/types/Calendar";
 
 const URLS = {
   CREATE_MEETING: {
@@ -91,15 +99,15 @@ const testCredential = {
   id: 1,
   invalid: false,
   key: {
-    scope: "meeting:write meeting:read",
+    scope: process.env.ZOOM_MOCK_SCOPE || "meeting:write meeting:read",
     token_type: "Bearer",
-    expiry_date: 1625097600000,
-    access_token: "MOCK_ACCESS_TOKEN",
-    refresh_token: "MOCK_REFRESH_TOKEN",
+    expiry_date: Date.now() + 1000 * 60 * 60,
+    access_token: process.env.ZOOM_MOCK_TOKEN || "[MOCK]",
+    refresh_token: process.env.ZOOM_MOCK_REFRESH_TOKEN || "[MOCK]",
   },
   type: "zoom_video",
   userId: 1,
-  user: { email: "mock.user@example.com" },
+  user: { email: process.env.ZOOM_MOCK_USER || "test@example.com" },
   teamId: 1,
 };
 

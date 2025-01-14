@@ -1,0 +1,15 @@
+{
+  "name": "Zoom Video",
+  "slug": "zoomvideo",
+  "type": "zoom_video",
+  "logo": "icon.svg",
+  "url": "https://zoom.us/",
+  "variant": "conferencing",
+  "categories": ["video"],
+  "publisher": "Cal.com, Inc.",
+  "email": "help@cal.com",
+  "description": "Zoom is a video communications platform that allows for video, audio, and screen sharing between participants.",
+  "isTemplate": false,
+  "__createdUsingCli": true,
+  "dirName": "zoomvideo"
+}
