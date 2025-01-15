@@ -14,6 +14,16 @@ import prismaMock from "../../../../tests/libs/__mocks__/prismaMock";
 import config from "../config.json";
 import VideoApiAdapter from "./VideoApiAdapter";
 
+/**
+ * Test suite for Zoom Video Adapter integration
+ * 
+ * API Documentation References:
+ * - List/Get Meetings: https://developers.zoom.us/docs/api/rest/reference/zoom-api/methods/#operation/meetings
+ * - Create Meeting: https://developers.zoom.us/docs/api/rest/reference/zoom-api/methods/#operation/meetingCreate
+ * - Update Meeting: https://developers.zoom.us/docs/api/rest/reference/zoom-api/methods/#operation/meetingUpdate
+ * - Delete Meeting: https://developers.zoom.us/docs/api/rest/reference/zoom-api/methods/#operation/meetingDelete
+ */
+
 const URLS = {
   CREATE_MEETING: {
     url: "https://api.zoom.us/v2/users/me/meetings",

@@ -8,7 +8,7 @@
   "categories": ["video"],
   "publisher": "Cal.com, Inc.",
   "email": "help@cal.com",
-  "description": "Zoom is a video communications platform that allows for video, audio, and screen sharing between participants.",
+  "description": "Video conferencing platform for audio, video and screen sharing",
   "isTemplate": false,
   "__createdUsingCli": true,
   "dirName": "zoomvideo"
