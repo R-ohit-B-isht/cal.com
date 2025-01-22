@@ -112,7 +112,7 @@ Here is what you need to be able to run Cal.com.
 
 - Node.js (Version: >=18.x)
 - PostgreSQL (Version: >=13.x)
-- Yarn _(recommended)_
+- Yarn _(recommended - we use yarn workspaces for monorepo package management)_
 
 > If you want to enable any of the available integrations, you may want to obtain additional credentials for each one. More details on this can be found below under the [integrations section](#integrations).
 
