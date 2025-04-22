@@ -62,7 +62,8 @@ jobs:
           
           # Convert multiline string to JSON-safe format
           ESCAPED_PROMPT=$(echo "$REVIEW_PROMPT" | jq -Rs .)
-          sleep 60
+          
+          echo "Creating Devin session..."
           RESPONSE=$(curl -s -X POST \
             -H "Authorization: Bearer $DEVIN_API_KEY" \
             -H "Content-Type: application/json" \
@@ -75,6 +76,89 @@ jobs:
             exit 1
           fi
           
-          echo "session-id=$(echo "$RESPONSE" | jq -r '.session_id')" >> $GITHUB_OUTPUT
-          echo "session-url=$(echo "$RESPONSE" | jq -r '.url')" >> $GITHUB_OUTPUT
-          echo "Devin session created successfully: $(echo "$RESPONSE")"
+          SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id')
+          SESSION_URL=$(echo "$RESPONSE" | jq -r '.url')
+          
+          echo "session-id=$SESSION_ID" >> $GITHUB_OUTPUT
+          echo "session-url=$SESSION_URL" >> $GITHUB_OUTPUT
+          echo "Devin session created successfully: $SESSION_URL"
+          
+          # Wait for Devin to complete the review (poll status endpoint)
+          echo "Waiting for Devin to complete the review..."
+          MAX_RETRIES=30
+          RETRY_COUNT=0
+          COMPLETED=false
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$COMPLETED" = "false" ]; do
+            # Wait 20 seconds between checks
+            sleep 20
+            
+            # Check session status
+            STATUS_RESPONSE=$(curl -s -X GET \
+              -H "Authorization: Bearer $DEVIN_API_KEY" \
+              -H "Content-Type: application/json" \
+              "https://api.devin.ai/v1/sessions/$SESSION_ID/status")
+            
+            # Check if session is completed
+            SESSION_STATUS=$(echo "$STATUS_RESPONSE" | jq -r '.status')
+            echo "Current session status: $SESSION_STATUS"
+            
+            if [ "$SESSION_STATUS" = "completed" ] || [ "$SESSION_STATUS" = "failed" ]; then
+              COMPLETED=true
+            else
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              echo "Waiting for session to complete... (Attempt $RETRY_COUNT/$MAX_RETRIES)"
+            fi
+          done
+          
+          if [ "$COMPLETED" = "false" ]; then
+            echo "Timed out waiting for Devin session to complete"
+            exit 1
+          fi
+          
+          if [ "$SESSION_STATUS" = "failed" ]; then
+            echo "Devin session failed"
+            exit 1
+          fi
+          
+          echo "Devin review completed successfully"
+          
+      - name: Post review comments to PR
+        if: steps.devin-review.outputs.session-id != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          SESSION_ID: ${{ steps.devin-review.outputs.session-id }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          echo "Retrieving review results from Devin session..."
+          
+          # Get session transcript to extract review comments
+          TRANSCRIPT_RESPONSE=$(curl -s -X GET \
+            -H "Authorization: Bearer $DEVIN_API_KEY" \
+            -H "Content-Type: application/json" \
+            "https://api.devin.ai/v1/sessions/$SESSION_ID/transcript")
+          
+          # Extract review comments from transcript
+          # This is a simplified approach - in a real implementation, you would parse the transcript more carefully
+          REVIEW_COMMENTS=$(echo "$TRANSCRIPT_RESPONSE" | jq -r '.messages[] | select(.role == "assistant") | .content' | grep -A 5 "REVIEW FINDINGS" || echo "No specific review findings found")
+          
+          if [ -z "$REVIEW_COMMENTS" ]; then
+            # Post a summary comment if no specific issues were found
+            gh pr comment $PR_NUMBER --body "## Devin PR Review
+            
+            I've reviewed this PR and found no specific issues that need to be addressed.
+            
+            [View the full review session](${{ steps.devin-review.outputs.session-url }})"
+          else
+            # Post the review comments
+            gh pr comment $PR_NUMBER --body "## Devin PR Review
+            
+            I've reviewed this PR and found the following issues:
+            
+            $REVIEW_COMMENTS
+            
+            [View the full review session](${{ steps.devin-review.outputs.session-url }})"
+          fi
+          
+          echo "Review comments posted to PR successfully"
