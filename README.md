@@ -654,3 +654,7 @@ Special thanks to these amazing projects which help power Cal.com:
 - [Prisma](https://prisma.io/)
 
 Cal.com is an [open startup](https://cal.com/open) and [Jitsu](https://github.com/jitsucom/jitsu) (an open-source Segment alternative) helps us to track most of the usage metrics.
+
+---
+
+*This is a dummy PR created for testing purposes.*
