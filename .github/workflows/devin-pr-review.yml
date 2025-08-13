@@ -23,10 +23,10 @@ jobs:
         id: check-session
         run: |
           # Look for session ID in PR comments (hidden comment approach)
-          COMMENTS=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \\
+          COMMENTS=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments")
           
-          EXISTING_SESSION=$(echo "$COMMENTS" | jq -r '.[] | select(.body | contains("<!-- DEVIN_SESSION_ID:")) | .body' | \\
+          EXISTING_SESSION=$(echo "$COMMENTS" | jq -r '.[] | select(.body | contains("<!-- DEVIN_SESSION_ID:")) | .body' | \
             grep -o "DEVIN_SESSION_ID:[^-]*" | cut -d: -f2 | tail -1 | tr -d ' ')
           
           if [ -n "$EXISTING_SESSION" ] && [ "$EXISTING_SESSION" != "null" ]; then
@@ -44,8 +44,8 @@ jobs:
         if: steps.check-session.outputs.is-followup == 'false'
         id: pr-files-initial
         run: |
-          FILES=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \\
-            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" | \\
+          FILES=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" | \
             jq -r '[.[].filename] | @json')
           echo "files=$FILES" >> $GITHUB_OUTPUT
 
@@ -58,8 +58,8 @@ jobs:
           LATEST_COMMIT="${{ github.event.pull_request.head.sha }}"
           
           # Get files changed in the latest push (since last commit)
-          CHANGED_FILES=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \\
-            "https://api.github.com/repos/${{ github.repository }}/commits/$LATEST_COMMIT" | \\
+          CHANGED_FILES=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/commits/$LATEST_COMMIT" | \
             jq -r '[.files[].filename] | @json')
           
           echo "changed-files=$CHANGED_FILES" >> $GITHUB_OUTPUT
@@ -99,10 +99,10 @@ jobs:
         run: |
           ESCAPED_PROMPT=$(echo "$REVIEW_PROMPT" | jq -Rs .)
           sleep 60
-          RESPONSE=$(curl -s -X POST \\
-            -H "Authorization: Bearer $DEVIN_API_KEY" \\
-            -H "Content-Type: application/json" \\
-            -d "{\\"prompt\\": $ESCAPED_PROMPT}" \\
+          RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Bearer $DEVIN_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\\"prompt\\": $ESCAPED_PROMPT}" \
             "https://api.devin.ai/v1/sessions")
           
           if [ "$(echo "$RESPONSE" | jq -r '.error')" != "null" ]; then
@@ -138,10 +138,10 @@ jobs:
 
           ESCAPED_MESSAGE=$(echo "$FOLLOW_UP_MESSAGE" | jq -Rs .)
           
-          RESPONSE=$(curl -s -X POST \\
-            -H "Authorization: Bearer $DEVIN_API_KEY" \\
-            -H "Content-Type: application/json" \\
-            -d "{\\"message\\": $ESCAPED_MESSAGE}" \\
+          RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Bearer $DEVIN_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\\"message\\": $ESCAPED_MESSAGE}" \
             "https://api.devin.ai/v1/session/$SESSION_ID/message")
           
           # Check response status (204 = success, no content)
@@ -159,10 +159,10 @@ jobs:
           SESSION_ID: ${{ steps.devin-review-initial.outputs.session-id }}
         run: |
           # Store session ID in a hidden comment for future reference
-          curl -s -X POST \\
-            -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \\
-            -H "Content-Type: application/json" \\
-            -d "{\\"body\\": \\"<!-- DEVIN_SESSION_ID:$SESSION_ID -->\\"}" \\
+          curl -s -X POST \
+            -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\\"body\\": \\"<!-- DEVIN_SESSION_ID:$SESSION_ID -->\\"}" \
             "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments"
           
           echo "Session ID stored for future follow-ups: $SESSION_ID"
