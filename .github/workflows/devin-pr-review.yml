@@ -22,9 +22,24 @@ jobs:
       - name: Get PR files
         id: pr-files
         run: |
-          FILES=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" | \
-            jq -r '[.[].filename] | @json')
+          # Get PR files with proper error handling
+          API_RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files")
+          
+          # Debug: Print the API response
+          echo "API Response: $API_RESPONSE"
+          
+          # Check if the response is an array (successful) or contains an error
+          if echo "$API_RESPONSE" | jq -e 'type == "array"' > /dev/null 2>&1; then
+            FILES=$(echo "$API_RESPONSE" | jq -r '[.[].filename] | @json')
+            echo "Successfully retrieved files: $FILES"
+          else
+            echo "Error: API response is not an array. Response: $API_RESPONSE"
+            # Fallback: use git to get changed files
+            FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} | jq -R -s -c 'split("\n")[:-1]')
+            echo "Using git fallback for files: $FILES"
+          fi
+          
           echo "files=$FILES" >> $GITHUB_OUTPUT
 
       - name: Create Devin Review Session
