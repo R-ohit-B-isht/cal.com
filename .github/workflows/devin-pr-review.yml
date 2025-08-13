@@ -1,4 +1,4 @@
-name: Automated PR Review
+name: Automated PR Review with Session Continuity
 
 on:
   pull_request:
@@ -12,55 +12,117 @@ permissions:
 jobs:
   review-pr:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Get PR files
-        id: pr-files
+      # NEW: Check for existing Devin session
+      - name: Check for existing session
+        id: check-session
         run: |
-          FILES=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" | \
-            jq -r '[.[].filename] | @json')
+          # Look for session ID in PR comments (hidden comment approach)
+          COMMENTS=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments")
+          
+          EXISTING_SESSION=$(echo "$COMMENTS" | jq -r '.[] | select(.body | contains("<!-- DEVIN_SESSION_ID:")) | .body' | \
+            grep -o "DEVIN_SESSION_ID:[^-]*" | cut -d: -f2 | tail -1 | tr -d ' ')
+          
+          if [ -n "$EXISTING_SESSION" ] && [ "$EXISTING_SESSION" != "null" ]; then
+            echo "existing-session=$EXISTING_SESSION" >> $GITHUB_OUTPUT
+            echo "is-followup=true" >> $GITHUB_OUTPUT
+            echo "Found existing session: $EXISTING_SESSION"
+          else
+            echo "existing-session=" >> $GITHUB_OUTPUT
+            echo "is-followup=false" >> $GITHUB_OUTPUT
+            echo "No existing session found - will create new one"
+          fi
+
+      # MODIFIED: Get files based on review type
+      - name: Get PR files (initial review)
+        if: steps.check-session.outputs.is-followup == 'false'
+        id: pr-files-initial
+        run: |
+          API_RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files")
+          
+          # Debug: Print the API response
+          echo "API Response: $API_RESPONSE"
+          
+          # Check if the response is an array (successful) or contains an error
+          if echo "$API_RESPONSE" | jq -e 'type == "array"' > /dev/null 2>&1; then
+            FILES=$(echo "$API_RESPONSE" | jq -r '[.[].filename] | @json')
+            echo "Successfully retrieved files: $FILES"
+          else
+            echo "Error: API response is not an array. Response: $API_RESPONSE"
+            # Fallback: use git to get changed files
+            FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} | jq -R -s -c 'split("\n")[:-1]')
+            echo "Using git fallback for files: $FILES"
+          fi
           echo "files=$FILES" >> $GITHUB_OUTPUT
 
-      - name: Create Devin Review Session
-        id: devin-review
+      # NEW: Get incremental changes for follow-ups
+      - name: Get incremental changes (follow-up review)
+        if: steps.check-session.outputs.is-followup == 'true'
+        id: incremental-changes
+        run: |
+          # Get the latest commit that triggered this workflow
+          LATEST_COMMIT="${{ github.event.pull_request.head.sha }}"
+          
+          # Get files changed in the latest push (since last commit)
+          CHANGED_FILES=$(curl -s -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/commits/$LATEST_COMMIT")
+          
+          # Debug: Print the API response
+          echo "API Response: $CHANGED_FILES"
+          
+          # Check if the response is an array (successful) or contains an error
+          if echo "$CHANGED_FILES" | jq -e 'type == "array"' > /dev/null 2>&1; then
+            FILES=$(echo "$CHANGED_FILES" | jq -r '[.[].filename] | @json')
+            echo "Successfully retrieved files: $FILES"
+          else
+            echo "Error: API response is not an array. Response: $CHANGED_FILES"
+            # Fallback: use git to get changed files
+            FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} | jq -R -s -c 'split("\n")[:-1]')
+            echo "Using git fallback for files: $FILES"
+          fi
+          
+          echo "changed-files=$CHANGED_FILES" >> $GITHUB_OUTPUT
+          echo "latest-commit=$LATEST_COMMIT" >> $GITHUB_OUTPUT
+
+      # MODIFIED: Create new session only for initial reviews
+      - name: Create Devin Review Session (initial)
+        if: steps.check-session.outputs.is-followup == 'false'
+        id: devin-review-initial
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
-          FILES_TO_REVIEW: ${{ steps.pr-files.outputs.files }}
+          FILES_TO_REVIEW: ${{ steps.pr-files-initial.outputs.files }}
           REVIEW_PROMPT: |
             You are PR Reviewer Devin. Your task is to review the following pull request based on our code conformance rules and leave feedback as comments.
             --user-afk
 
             Repository: ${{ github.repository }}
-
             PR Number: ${{ github.event.pull_request.number }}
+            Code Conformance Rules File Path: ./CONTRIBUTING.md
 
-            Code Conformance Rules File Path:
-            ./CONTRIBUTING.md
-
-            Files to review:
-            ${{ steps.pr-files.outputs.files }}
+            Files to review: ${{ steps.pr-files-initial.outputs.files }}
 
             Your tasks:
             1. Review the changes in the PR files
-            2. Analyze each changed file for conformance violations according to the provided Code Conformance File from Code Conformance Rules File Path.
-            3. Provide specific, actionable feedback for any violations against the provided Code Conformance File from Code Conformance Rules File Path.
-            4. If no violations are found, confirm compliance.
-            5. Push feedback as comments on the PR in brief describing the exact issue with lesser verbosity in comment.
+            2. Analyze each changed file for conformance violations according to CONTRIBUTING.md
+            3. Provide specific, actionable feedback for any violations
+            4. If no violations are found, confirm compliance
+            5. Push feedback as comments on the PR with brief descriptions
 
             Guidelines:
             - Be specific about which rules are violated
             - Provide clear suggestions for fixing violations
             - Reference specific lines of code in your comments
             - Comment on actual violations and coding conventions
+
+            IMPORTANT: This is the initial review. I will send you follow-up messages when new commits are pushed to this PR, so please maintain context for future incremental reviews.
         run: |
-          
-          # Convert multiline string to JSON-safe format
           ESCAPED_PROMPT=$(echo "$REVIEW_PROMPT" | jq -Rs .)
           sleep 60
           RESPONSE=$(curl -s -X POST \
@@ -69,12 +131,66 @@ jobs:
             -d "{\"prompt\": $ESCAPED_PROMPT}" \
             "https://api.devin.ai/v1/sessions")
           
-          # Check for errors and set outputs
+          echo "API Response: $RESPONSE"
+          
           if [ "$(echo "$RESPONSE" | jq -r '.error')" != "null" ]; then
             echo "Error creating Devin session: $(echo "$RESPONSE" | jq -r '.error')"
             exit 1
           fi
           
-          echo "session-id=$(echo "$RESPONSE" | jq -r '.session_id')" >> $GITHUB_OUTPUT
+          SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id')
+          echo "session-id=$SESSION_ID" >> $GITHUB_OUTPUT
           echo "session-url=$(echo "$RESPONSE" | jq -r '.url')" >> $GITHUB_OUTPUT
-          echo "Devin session created successfully: $(echo "$RESPONSE")"
+          echo "Devin session created successfully: $SESSION_ID"
+
+      # NEW: Send follow-up message to existing session
+      - name: Send follow-up to existing session
+        if: steps.check-session.outputs.is-followup == 'true'
+        env:
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          SESSION_ID: ${{ steps.check-session.outputs.existing-session }}
+          CHANGED_FILES: ${{ steps.incremental-changes.outputs.changed-files }}
+          LATEST_COMMIT: ${{ steps.incremental-changes.outputs.latest-commit }}
+        run: |
+          FOLLOW_UP_MESSAGE="Follow-up review for PR ${{ github.event.pull_request.number }}:
+
+          New commit: $LATEST_COMMIT
+          Files changed in this update: $CHANGED_FILES
+
+          Please review only these incremental changes and provide feedback on:
+          1. Any new conformance violations in the changed files
+          2. Whether previous feedback has been addressed
+          3. Any new issues introduced by these changes
+
+          Focus only on the incremental changes, not the entire PR again."
+
+          ESCAPED_MESSAGE=$(echo "$FOLLOW_UP_MESSAGE" | jq -Rs .)
+          
+          RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Bearer $DEVIN_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"message\": $ESCAPED_MESSAGE}" \
+            "https://api.devin.ai/v1/session/$SESSION_ID/message")
+          
+          # Check response status (204 = success, no content)
+          if [ $? -eq 0 ]; then
+            echo "Follow-up message sent successfully to session: $SESSION_ID"
+          else
+            echo "Error sending follow-up message"
+            exit 1
+          fi
+
+      # NEW: Store session ID for future follow-ups (only for initial reviews)
+      - name: Store session ID in PR comment
+        if: steps.check-session.outputs.is-followup == 'false'
+        env:
+          SESSION_ID: ${{ steps.devin-review-initial.outputs.session-id }}
+        run: |
+          # Store session ID in a hidden comment for future reference
+          curl -s -X POST \
+            -H "Authorization: token ${{ secrets.GIT_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"body\": \"<!-- DEVIN_SESSION_ID:$SESSION_ID -->\"}" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments"
+          
+          echo "Session ID stored for future follow-ups: $SESSION_ID"
