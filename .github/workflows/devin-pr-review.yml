@@ -129,7 +129,7 @@ jobs:
           RESPONSE=$(curl -s -X POST \
             -H "Authorization: Bearer $DEVIN_API_KEY" \
             -H "Content-Type: application/json" \
-            -d "{"prompt": $ESCAPED_PROMPT}" \
+            -d "{"prompt": \"$ESCAPED_PROMPT\"}" \
             "https://api.devin.ai/v1/sessions")
           
           if [ "$(echo "$RESPONSE" | jq -r '.error')" != "null" ]; then
