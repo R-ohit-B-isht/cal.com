@@ -141,6 +141,7 @@ jobs:
           echo "session-id=$SESSION_ID" >> $GITHUB_OUTPUT
           echo "session-url=$(echo "$RESPONSE" | jq -r '.url')" >> $GITHUB_OUTPUT
           echo "Devin session created successfully: $SESSION_ID"
+          echo "Devin response: $RESPONSE"
 
       # NEW: Send follow-up message to existing session
       - name: Send follow-up to existing session
